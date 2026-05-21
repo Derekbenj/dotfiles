@@ -1,17 +1,9 @@
 # ~/.zshrc managed by ~/dotfiles via GNU Stow
 # Machine-specific/private settings go in ~/.zshrc.local
 
-# Basic PATHs first. Keep these safe even on fresh machines/containers.
+# Basic PATHs first. /usr/local/bin must come before /usr/bin so the latest
+# manually installed Neovim wins over Ubuntu's older apt neovim.
 export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:$PATH"
-
-# Optional distrobox/container prompt marker.
-# Enable with: export DOTFILES_CONTAINER_PROMPT=1
-# Disable with: unset DOTFILES_CONTAINER_PROMPT
-if [[ "${DOTFILES_CONTAINER_PROMPT:-0}" == "1" ]] && [[ -n "${container:-}" || -f /run/.containerenv || -f /.dockerenv ]]; then
-  _dotfiles_container_name="${DISTROBOX_NAME:-${container:-container}}"
-  # Put the tag in front of whatever prompt/theme is active.
-  export PROMPT="[${_dotfiles_container_name}:distrobox] ${PROMPT:-%n@%m:%~ %# }"
-fi
 
 # Rust/Cargo, if installed.
 if [[ -r "$HOME/.cargo/env" ]]; then
@@ -27,7 +19,8 @@ elif [[ -r "$HOME/.local/share/../bin/env" ]]; then
 fi
 
 # Oh My Zsh, if installed. Fall back gracefully on machines/containers without it.
-export ZSH="${ZSH:-$HOME/.oh-my-zsh}"
+# Do not inherit a stale ZSH path from a parent shell/container.
+export ZSH="${DOTFILES_OMZ_DIR:-$HOME/.oh-my-zsh}"
 ZSH_THEME="${ZSH_THEME:-robbyrussell}"
 plugins=(git zsh-autosuggestions)
 
@@ -54,6 +47,35 @@ alias dd="distrobox list"
 alias de="distrobox enter"
 
 # Local machine/container secrets, PATH additions, prompt overrides, etc.
+# This is intentionally sourced before the final prompt marker so local files
+# can set DOTFILES_CONTAINER_PROMPT and DOTFILES_CONTAINER_NAME.
 if [[ -r "$HOME/.zshrc.local" ]]; then
   source "$HOME/.zshrc.local"
 fi
+
+# >>> dotfiles container prompt marker >>>
+# Enable per machine/container with:
+#   export DOTFILES_CONTAINER_PROMPT=1
+#
+# Optional manual name override:
+#   export DOTFILES_CONTAINER_NAME="generic"
+#
+# This block intentionally belongs at the bottom of .zshrc so it runs
+# after Oh My Zsh / themes have already built the prompt.
+if [[ "${DOTFILES_CONTAINER_PROMPT:-0}" == "1" ]] && [[ -n "${container:-}" || -f /run/.containerenv || -f /.dockerenv ]]; then
+  if [[ -n "${DOTFILES_CONTAINER_NAME:-}" ]]; then
+    _dotfiles_container_name="$DOTFILES_CONTAINER_NAME"
+  elif [[ -n "${DISTROBOX_NAME:-}" ]]; then
+    _dotfiles_container_name="$DISTROBOX_NAME"
+  elif [[ -r /run/.containerenv ]] && grep -q '^name=' /run/.containerenv 2>/dev/null; then
+    _dotfiles_container_name="$(grep '^name=' /run/.containerenv | head -n1 | cut -d= -f2- | tr -d '"')"
+  elif [[ -n "${container:-}" && "${container:-}" != "podman" && "${container:-}" != "docker" ]]; then
+    _dotfiles_container_name="$container"
+  else
+    _dotfiles_container_name="container"
+  fi
+
+  PROMPT="[${_dotfiles_container_name}:distrobox] ${PROMPT:-%n@%m:%~ %# }"
+  unset _dotfiles_container_name
+fi
+# <<< dotfiles container prompt marker <<<

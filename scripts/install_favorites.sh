@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Installs Derek's preferred baseline dev tools on Ubuntu/Debian/Distrobox.
 # Includes: zsh, git, curl, stow, direnv, zoxide, Node.js/npm,
-# Rust/rustup, uv via Cargo, Oh My Zsh, and zsh-autosuggestions.
+# latest Neovim release tarball, Rust/rustup, uv via Cargo, Oh My Zsh,
+# zsh-autosuggestions, and useful LazyVim tools.
 
 if [[ "${EUID}" -eq 0 ]]; then
   echo "[error] Do not run this script as root. It will use sudo when needed."
@@ -12,6 +13,46 @@ fi
 
 have() {
   command -v "$1" >/dev/null 2>&1
+}
+
+install_latest_neovim() {
+  local arch asset url tmpdir installed_version
+
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64|amd64)
+      asset="nvim-linux-x86_64.tar.gz"
+      ;;
+    aarch64|arm64)
+      asset="nvim-linux-arm64.tar.gz"
+      ;;
+    *)
+      echo "[nvim] Unsupported architecture for official binary: $arch"
+      echo "[nvim] Falling back to apt-provided neovim if available."
+      return 0
+      ;;
+  esac
+
+  url="https://github.com/neovim/neovim/releases/latest/download/${asset}"
+  tmpdir="$(mktemp -d)"
+
+  echo "[nvim] Installing latest Neovim release from: $url"
+  curl -fL "$url" -o "$tmpdir/$asset"
+  tar -xzf "$tmpdir/$asset" -C "$tmpdir"
+
+  sudo rm -rf /opt/nvim-linux-x86_64 /opt/nvim-linux-arm64 /opt/nvim
+  sudo mv "$tmpdir"/nvim-linux-* /opt/nvim
+  sudo ln -sfn /opt/nvim/bin/nvim /usr/local/bin/nvim
+
+  rm -rf "$tmpdir"
+
+  if have nvim; then
+    installed_version="$(/usr/local/bin/nvim --version | head -n1 || true)"
+    echo "[nvim] Installed: $installed_version"
+    echo "[nvim] Path: $(command -v nvim)"
+  else
+    echo "[warn] nvim was installed to /usr/local/bin/nvim but is not on PATH."
+  fi
 }
 
 if have apt-get; then
@@ -29,11 +70,24 @@ if have apt-get; then
     direnv \
     zoxide \
     unzip \
+    xz-utils \
+    ripgrep \
+    fd-find \
+    lazygit \
     nodejs \
     npm
 else
-  echo "[warn] apt-get not found. Install zsh git curl stow direnv zoxide nodejs npm manually for this OS."
+  echo "[warn] apt-get not found. Install baseline tools manually for this OS."
 fi
+
+# Ubuntu/Debian package is called fd-find and installs the binary as fdfind.
+# Many Neovim plugins expect the command name to be fd.
+if have fdfind && ! have fd; then
+  echo "[fd] Creating /usr/local/bin/fd -> $(command -v fdfind)"
+  sudo ln -sfn "$(command -v fdfind)" /usr/local/bin/fd
+fi
+
+install_latest_neovim
 
 if have node; then
   echo "[node] Node.js: $(node --version)"
@@ -65,16 +119,15 @@ if have cargo; then
     echo "[uv] Installing uv via Cargo..."
     cargo install uv
   else
-    echo "[uv] uv already installed."
+    echo "[uv] uv already installed: $(uv --version 2>/dev/null || true)"
   fi
 else
   echo "[warn] cargo still not found, so uv was not installed. Open a new shell and run: cargo install uv"
 fi
 
-# Oh My Zsh notes:
-# Some existing shells export ZSH=/some/old/path. If we leave that in the
-# environment, the official installer may try to use the wrong directory and
-# fail with "The $ZSH folder already exists". Keep OMZ tied to this HOME.
+# Some shells export ZSH=/some/old/path. If we leave that in the environment,
+# the official installer may use the wrong directory and fail. Keep OMZ tied
+# to this HOME unless explicitly overridden.
 OMZ_DIR="${DOTFILES_OMZ_DIR:-$HOME/.oh-my-zsh}"
 
 if [[ -d "$OMZ_DIR" ]]; then
@@ -96,7 +149,6 @@ fi
 
 if have zsh; then
   zsh_path="$(command -v zsh)"
-
   current_login_shell="$(getent passwd "$USER" | cut -d: -f7 || true)"
 
   if [[ "$current_login_shell" != "$zsh_path" ]]; then
@@ -110,7 +162,7 @@ if have zsh; then
       echo "[zsh] Default shell changed. Log out/in for it to fully apply."
     else
       echo "[warn] chsh failed. In some Distrobox/container setups this is normal."
-      echo "[warn] You can still run: zsh"
+      echo "[warn] The generic enter script will still launch zsh directly when available."
     fi
   else
     echo "[zsh] zsh is already your login shell."
@@ -137,11 +189,11 @@ Start using zsh now:
 
 Container prompt tag:
   Enable for this machine/container:
-    echo 'export DOTFILES_CONTAINER_PROMPT=1' >> ~/.zshrc.local
-    source ~/.zshrc
-
-  Disable:
-    sed -i '/DOTFILES_CONTAINER_PROMPT/d' ~/.zshrc.local
+    cat > ~/.zshrc.local <<'EOF_LOCAL'
+    export DOTFILES_CONTAINER_PROMPT=1
+    export DOTFILES_CONTAINER_NAME="generic"
+    EOF_LOCAL
+    exec zsh
 
 Commit dotfile changes:
   cd ~/dotfiles
