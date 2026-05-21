@@ -54,7 +54,6 @@ install_apt_baseline() {
     echo "[warn] apt-get not found. Install baseline packages manually for this OS."
   fi
 
-  # Ubuntu installs fd as fdfind.
   if have fdfind && ! have fd; then
     mkdir -p "$HOME/.local/bin"
     ln -sf "$(command -v fdfind)" "$HOME/.local/bin/fd"
@@ -62,33 +61,28 @@ install_apt_baseline() {
 }
 
 install_latest_nvim() {
-  local arch
+  local arch url tmpdir extracted
   arch="$(arch_name)"
 
-  local url=""
   if [[ "$arch" == "x86_64" ]]; then
     url="https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz"
-  elif [[ "$arch" == "arm64" ]]; then
+  else
     url="https://github.com/neovim/neovim/releases/latest/download/nvim-linux-arm64.tar.gz"
   fi
 
   echo "[nvim] Installing latest Neovim release from:"
   echo "       $url"
 
-  local tmpdir
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' RETURN
-
   curl -fL "$url" -o "$tmpdir/nvim.tar.gz"
   tar -xzf "$tmpdir/nvim.tar.gz" -C "$tmpdir"
 
-  local extracted
   extracted="$(find "$tmpdir" -mindepth 1 -maxdepth 1 -type d -name 'nvim*' | head -n 1)"
 
   if [[ -z "$extracted" || ! -x "$extracted/bin/nvim" ]]; then
     echo "[error] Neovim archive did not contain expected bin/nvim."
-    echo "[debug] Extracted contents:"
     find "$tmpdir" -maxdepth 3 -print
+    rm -rf "$tmpdir"
     exit 1
   fi
 
@@ -100,6 +94,7 @@ install_latest_nvim() {
   sudo ln -sf /opt/nvim/bin/nvim /usr/local/bin/vim
   sudo ln -sf /opt/nvim/bin/nvim /usr/local/bin/vi
 
+  rm -rf "$tmpdir"
   hash -r 2>/dev/null || true
 
   echo "[nvim] Installed: $(/usr/local/bin/nvim --version | head -n 1)"
@@ -111,26 +106,23 @@ install_latest_lazygit() {
     return
   fi
 
-  local arch
+  local arch lg_arch tmpdir version url
   arch="$(arch_name)"
 
-  local lg_arch=""
   if [[ "$arch" == "x86_64" ]]; then
     lg_arch="x86_64"
-  elif [[ "$arch" == "arm64" ]]; then
+  else
     lg_arch="arm64"
   fi
 
   echo "[lazygit] Installing latest lazygit release..."
 
-  local tmpdir version url
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' RETURN
-
-  version="$(curl -fsSL https://api.github.com/repos/jesseduffield/lazygit/releases/latest | grep -Po '"tag_name":\s*"v\K[^"]+' | head -n 1)"
+  version="$(curl -fsSL https://api.github.com/repos/jesseduffield/lazygit/releases/latest | grep -Po '"tag_name":\s*"v\K[^"]+' | head -n 1 || true)"
 
   if [[ -z "$version" ]]; then
     echo "[warn] Could not determine latest lazygit version; skipping lazygit."
+    rm -rf "$tmpdir"
     return
   fi
 
@@ -141,10 +133,12 @@ install_latest_lazygit() {
   if [[ ! -x "$tmpdir/lazygit" ]]; then
     echo "[warn] lazygit archive did not contain executable; skipping lazygit."
     find "$tmpdir" -maxdepth 2 -print
+    rm -rf "$tmpdir"
     return
   fi
 
   sudo install -m 0755 "$tmpdir/lazygit" /usr/local/bin/lazygit
+  rm -rf "$tmpdir"
   echo "[lazygit] Installed: $(lazygit --version | head -n 1)"
 }
 
@@ -157,7 +151,6 @@ install_rust_and_uv() {
   fi
 
   if [[ -r "$HOME/.cargo/env" ]]; then
-    # shellcheck source=/dev/null
     source "$HOME/.cargo/env"
   fi
 
@@ -170,13 +163,11 @@ install_rust_and_uv() {
     fi
   else
     echo "[warn] cargo still not found, so uv was not installed."
-    echo "[warn] Open a new shell and run: cargo install uv"
   fi
 }
 
 install_oh_my_zsh() {
-  # Do NOT trust an inherited ZSH variable from the host.
-  local omz_dir
+  local omz_dir zsh_custom
   omz_dir="${DOTFILES_OMZ_DIR:-$HOME/.oh-my-zsh}"
 
   if [[ -d "$omz_dir" ]]; then
@@ -187,7 +178,6 @@ install_oh_my_zsh() {
       sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
   fi
 
-  local zsh_custom
   zsh_custom="${ZSH_CUSTOM:-$omz_dir/custom}"
 
   if [[ -d "$omz_dir" && ! -d "$zsh_custom/plugins/zsh-autosuggestions" ]]; then
@@ -219,22 +209,23 @@ set_default_zsh_if_possible() {
       echo "[zsh] Login shell changed. Re-enter the container for it to fully apply."
     else
       echo "[warn] chsh failed. In some Distrobox/container setups this is normal."
-      echo "[warn] The enter script should still launch zsh directly."
     fi
   else
     echo "[zsh] zsh is already your login shell."
   fi
 }
 
-run_stow_install() {
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-  # Suppress zsh-newuser-install even if zsh gets launched between now and stow.
-  # This will be replaced by stow if the repo has zsh/.zshrc.
+ensure_temp_zshrc_for_bootstrap() {
+  # Suppress zsh-newuser-install before Stow is ready.
+  # install.sh will remove this exact placeholder before stowing zsh.
   if [[ ! -e "$HOME/.zshrc" ]]; then
     echo "# Temporary .zshrc created by bootstrap; replaced by stow." > "$HOME/.zshrc"
   fi
+}
+
+run_stow_install() {
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
   if [[ -x "$script_dir/install.sh" ]]; then
     echo "[dotfiles] Running Stow install..."
@@ -260,6 +251,7 @@ install_apt_baseline
 install_latest_nvim
 install_latest_lazygit
 install_rust_and_uv
+ensure_temp_zshrc_for_bootstrap
 install_oh_my_zsh
 set_default_zsh_if_possible
 run_stow_install
@@ -279,12 +271,5 @@ export DOTFILES_CONTAINER_PROMPT=1
 export DOTFILES_CONTAINER_NAME="generic"
 EOF
     exec zsh
-
-Commit dotfile changes:
-  cd ~/dotfiles
-  git status
-  git add zsh/.zshrc nvim/.config/nvim scripts README.md
-  git commit -m "Update dotfiles"
-  git push
 
 MSG

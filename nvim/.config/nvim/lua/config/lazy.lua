@@ -1,4 +1,3 @@
--- Bootstrap lazy.nvim so fresh containers work.
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 
 if not (vim.uv or vim.loop).fs_stat(lazypath) then
@@ -42,17 +41,9 @@ require("lazy").setup({
     { import = "lazyvim.plugins.extras.lang.yaml" },
     { import = "plugins" },
   },
-  defaults = {
-    lazy = false,
-    version = false,
-  },
-  install = {
-    colorscheme = { "tokyonight", "habamax" },
-  },
-  checker = {
-    enabled = true,
-    notify = false,
-  },
+  defaults = { lazy = false, version = false },
+  install = { colorscheme = { "tokyonight", "habamax" } },
+  checker = { enabled = true, notify = false },
   performance = {
     rtp = {
       disabled_plugins = {

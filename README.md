@@ -16,13 +16,3 @@ cd ~/dotfiles
 cd ~/dotfiles
 ./scripts/install.sh
 ```
-
-## Enable container prompt
-
-```bash
-cat > ~/.zshrc.local <<'EOF'
-export DOTFILES_CONTAINER_PROMPT=1
-export DOTFILES_CONTAINER_NAME="generic"
-EOF
-exec zsh
-```

@@ -13,13 +13,27 @@ fi
 
 cd "$DOTFILES_DIR"
 
+# If bootstrap created a placeholder ~/.zshrc only to suppress zsh-newuser-install,
+# remove it so Stow can create the real symlink. Do not remove a real user config.
+if [[ -f "$HOME/.zshrc" && ! -L "$HOME/.zshrc" ]]; then
+  if grep -qE 'temporary bootstrap zshrc|Temporary \.zshrc created by bootstrap' "$HOME/.zshrc" 2>/dev/null; then
+    echo "[stow] Removing temporary bootstrap ~/.zshrc so zsh can be stowed."
+    rm -f "$HOME/.zshrc"
+  else
+    echo "[error] $HOME/.zshrc exists and is not a symlink."
+    echo "        Stow will not overwrite it."
+    echo "        Back it up, then rerun:"
+    echo "          mv ~/.zshrc ~/.zshrc.backup.$(date +%Y%m%d-%H%M%S)"
+    echo "          cd ~/dotfiles && ./scripts/install.sh"
+    exit 1
+  fi
+fi
+
 packages=()
 [[ -d "$DOTFILES_DIR/nvim" ]] && packages+=("nvim")
 [[ -d "$DOTFILES_DIR/zsh" ]] && packages+=("zsh")
 
 echo "[stow] Installing packages: ${packages[*]}"
-
-# --adopt is intentionally NOT used: we do not want to silently absorb random files.
 stow --target="$HOME" --restow "${packages[@]}"
 
 echo "[ok] Dotfiles installed."
