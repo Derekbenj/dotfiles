@@ -3,8 +3,9 @@ set -euo pipefail
 
 # Installs Derek's preferred baseline dev tools on Ubuntu/Debian/Distrobox.
 # Includes: zsh, git, curl, stow, direnv, zoxide, Node.js/npm,
-# latest Neovim release tarball, Rust/rustup, uv via Cargo, Oh My Zsh,
-# zsh-autosuggestions, and useful LazyVim tools.
+# latest Neovim release tarball, latest lazygit release tarball,
+# Rust/rustup, uv via Cargo, Oh My Zsh, zsh-autosuggestions,
+# and useful LazyVim tools.
 
 if [[ "${EUID}" -eq 0 ]]; then
   echo "[error] Do not run this script as root. It will use sudo when needed."
@@ -55,6 +56,57 @@ install_latest_neovim() {
   fi
 }
 
+install_latest_lazygit() {
+  local arch asset_arch latest_url version asset url tmpdir installed_version
+
+  if have lazygit; then
+    installed_version="$(lazygit --version 2>/dev/null || true)"
+    echo "[lazygit] Already installed: $installed_version"
+    return 0
+  fi
+
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64|amd64)
+      asset_arch="x86_64"
+      ;;
+    aarch64|arm64)
+      asset_arch="arm64"
+      ;;
+    *)
+      echo "[lazygit] Unsupported architecture for official binary: $arch"
+      return 0
+      ;;
+  esac
+
+  echo "[lazygit] Resolving latest lazygit release..."
+  latest_url="$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/jesseduffield/lazygit/releases/latest)"
+  version="${latest_url##*/}"
+  version="${version#v}"
+
+  if [[ -z "$version" || "$version" == "latest" ]]; then
+    echo "[warn] Could not resolve latest lazygit version from: $latest_url"
+    return 0
+  fi
+
+  asset="lazygit_${version}_Linux_${asset_arch}.tar.gz"
+  url="https://github.com/jesseduffield/lazygit/releases/latest/download/${asset}"
+  tmpdir="$(mktemp -d)"
+
+  echo "[lazygit] Installing latest lazygit from: $url"
+  curl -fL "$url" -o "$tmpdir/$asset"
+  tar -xzf "$tmpdir/$asset" -C "$tmpdir" lazygit
+  sudo install -m 0755 "$tmpdir/lazygit" /usr/local/bin/lazygit
+  rm -rf "$tmpdir"
+
+  if have lazygit; then
+    echo "[lazygit] Installed: $(lazygit --version 2>/dev/null || true)"
+    echo "[lazygit] Path: $(command -v lazygit)"
+  else
+    echo "[warn] lazygit was installed to /usr/local/bin/lazygit but is not on PATH."
+  fi
+}
+
 if have apt-get; then
   echo "[apt] Installing baseline packages..."
   sudo apt-get update
@@ -73,7 +125,6 @@ if have apt-get; then
     xz-utils \
     ripgrep \
     fd-find \
-    lazygit \
     nodejs \
     npm
 else
@@ -88,6 +139,7 @@ if have fdfind && ! have fd; then
 fi
 
 install_latest_neovim
+install_latest_lazygit
 
 if have node; then
   echo "[node] Node.js: $(node --version)"
@@ -190,9 +242,9 @@ Start using zsh now:
 Container prompt tag:
   Enable for this machine/container:
     cat > ~/.zshrc.local <<'EOF_LOCAL'
-    export DOTFILES_CONTAINER_PROMPT=1
-    export DOTFILES_CONTAINER_NAME="generic"
-    EOF_LOCAL
+export DOTFILES_CONTAINER_PROMPT=1
+export DOTFILES_CONTAINER_NAME="generic"
+EOF_LOCAL
     exec zsh
 
 Commit dotfile changes:
