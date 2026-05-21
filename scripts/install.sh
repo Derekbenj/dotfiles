@@ -1,32 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET_HOME="${HOME}"
-PACKAGES=(nvim zsh)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOTFILES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-if ! command -v stow >/dev/null 2>&1; then
-  echo "[error] GNU Stow is not installed. Run ./scripts/install_favorites.sh first, or install stow manually."
+have() { command -v "$1" >/dev/null 2>&1; }
+
+if ! have stow; then
+  echo "[error] stow is not installed. Run ./scripts/install_favorites.sh first."
   exit 1
 fi
 
-mkdir -p "$TARGET_HOME/.config"
-
-# Back up real files/dirs that would conflict with Stow. Existing symlinks are left alone.
-backup_path() {
-  local path="$1"
-  if [[ -e "$path" && ! -L "$path" ]]; then
-    local backup="${path}.backup.$(date +%Y%m%d-%H%M%S)"
-    echo "[backup] $path -> $backup"
-    mv "$path" "$backup"
-  fi
-}
-
-backup_path "$TARGET_HOME/.zshrc"
-backup_path "$TARGET_HOME/.config/nvim"
-
 cd "$DOTFILES_DIR"
-echo "[stow] Installing packages: ${PACKAGES[*]}"
-stow --target="$TARGET_HOME" --restow "${PACKAGES[@]}"
 
-echo "[ok] Dotfiles installed. Open a new shell or run: source ~/.zshrc"
+packages=()
+[[ -d "$DOTFILES_DIR/nvim" ]] && packages+=("nvim")
+[[ -d "$DOTFILES_DIR/zsh" ]] && packages+=("zsh")
+
+echo "[stow] Installing packages: ${packages[*]}"
+
+# --adopt is intentionally NOT used: we do not want to silently absorb random files.
+stow --target="$HOME" --restow "${packages[@]}"
+
+echo "[ok] Dotfiles installed."
+echo "     Start a fresh shell with: exec zsh"
