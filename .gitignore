@@ -1,0 +1,14 @@
+.DS_Store
+Thumbs.db
+
+*.local
+*.secret
+*.env
+.env
+.envrc.local
+.zshrc.local
+
+*.log
+node_modules/
+.venv/
+__pycache__/
